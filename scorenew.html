@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>คำนวณ GPAX + TCAS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="container">
+  <section class="header">
+    <h1>เครื่องคำนวณ GPAX</h1>
+    <p class="lead">เลือกแผนการเรียน → ภาคเรียน → มหาวิทยาลัย/คณะ → กรอกเกรด</p>
+  </section>
+
+  <section class="card" id="filters">
+    <div class="row">
+      <label for="plan">แผนการเรียน</label>
+      <select id="plan">
+        <option value="" disabled selected>— เลือกแผนการเรียน —</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="level">ระดับเริ่มต้น</label>
+      <select id="level" disabled>
+        <option value="" disabled selected>— เลือกระดับ —</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="numTerms">จำนวนภาคเรียน (สูงสุด 6)</label>
+      <input id="numTerms" type="number" min="1" max="6" value="1" disabled />
+    </div>
+
+    <div class="row">
+      <label>ภาคเรียนที่จะนำมาคิด</label>
+      <div id="termChips" class="muted">ยังไม่เลือก</div>
+    </div>
+
+    <!-- ช่องกรอก GPAX เดิม -->
+    <div class="row hidden" id="gpaxM4Row">
+      <label>GPAX ม.4</label>
+      <input type="number" step="0.01" id="gpaxM4" placeholder="เช่น 3.25" />
+      <label>หน่วยกิตสะสม ม.4</label>
+      <input type="number" id="creditM4" placeholder="เช่น 16.5" />
+    </div>
+
+    <div class="row hidden" id="gpaxM5Row">
+      <label>GPAX ม.5</label>
+      <input type="number" step="0.01" id="gpaxM5" placeholder="เช่น 3.40" />
+      <label>หน่วยกิตสะสม ม.5</label>
+      <input type="number" id="creditM5" placeholder="เช่น 50" />
+    </div>
+
+    <div class="row">
+      <label for="uni">มหาวิทยาลัย</label>
+      <select id="uni" disabled>
+        <option value="" disabled selected>— เลือกมหาวิทยาลัย —</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="faculty">คณะ</label>
+      <select id="faculty" disabled>
+        <option value="" disabled selected>— เลือกคณะ —</option>
+      </select>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="btnLoad" disabled>แสดงรายวิชา</button>
+      <button class="btn ghost" id="btnReset">ล้างตัวเลือก</button>
+    </div>
+  </section>
+
+  <section class="card hidden" id="coursesCard">
+    <h3>รายวิชาที่ใช้คำนวณ</h3>
+    <div class="inputs-area" id="courseList"></div>
+    <div class="actions">
+      <button class="btn" id="btnCalc">คำนวณ GPAX</button>
+      <button class="btn ghost" id="btnClearGrades">ล้างเกรด</button>
+      <button class="btn1"><a href="plan.html">เสร็จสิ้น</a></button>
+    </div>
+    <div class="weights-info" id="creditInfo"></div>
+  </section>
+
+  <section class="card hidden" id="resultCard">
+    <div class="result-row">
+      <div>
+        <div class="mini">GPAX</div>
+        <div class="big" id="gpaxValue">—</div>
+      </div>
+      <div style="flex:1">
+        <div class="bar-compare">
+          <div id="barYour" class="bar" style="left:0;width:0%"></div>
+        </div>
+        <div class="muted">ช่วง 0.00–4.00 | ของคุณ: <span id="gpaxText">—</span></div>
+      </div>
+    </div>
+    <div class="footer" id="resultMsg"></div>
+  </section>
+</div>
+<script>
+  const LEVEL_TERM_ORDER = [
+  { level: "มัธยมศึกษาปีที่4", term: "เทอมหนึ่ง" },
+  { level: "มัธยมศึกษาปีที่4", term: "เทอมสอง" },
+  { level: "มัธยมศึกษาปีที่5", term: "เทอมหนึ่ง" },
+  { level: "มัธยมศึกษาปีที่5", term: "เทอมสอง" },
+  { level: "มัธยมศึกษาปีที่6", term: "เทอมหนึ่ง" },
+  { level: "มัธยมศึกษาปีที่6", term: "เทอมสอง" }
+];
+
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+const dom = {
+  plan: $("#plan"), level: $("#level"), numTerms: $("#numTerms"), termChips: $("#termChips"),
+  uni: $("#uni"), faculty: $("#faculty"),
+  btnLoad: $("#btnLoad"), btnReset: $("#btnReset"),
+  coursesCard: $("#coursesCard"), courseList: $("#courseList"),
+  btnCalc: $("#btnCalc"), btnClearGrades: $("#btnClearGrades"),
+  creditInfo: $("#creditInfo"), resultCard: $("#resultCard"),
+  gpaxValue: $("#gpaxValue"), gpaxText: $("#gpaxText"),
+  barYour: $("#barYour"), resultMsg: $("#resultMsg"),
+  gpaxM4Row: $("#gpaxM4Row"), gpaxM5Row: $("#gpaxM5Row"),
+  gpaxM4: $("#gpaxM4"), creditM4: $("#creditM4"),
+  gpaxM5: $("#gpaxM5"), creditM5: $("#creditM5")
+};
+
+let allCourses = [];
+let tcasData = [];
+
+async function loadXML() {
+  const text = await fetch("curriculum.xml").then(r=>r.text());
+  const xml = new DOMParser().parseFromString(text,"text/xml");
+  allCourses = Array.from(xml.querySelectorAll("course")).map(c=>({
+    level: txt(c,"ระดับชั้น"), term: txt(c,"ภาคเรียน"), plan: txt(c,"แผนการเรียน"),
+    name: txt(c,"รายวิชา"), credit: parseFloat(txt(c,"หน่วยกิต"))
+  }));
+  initPlan();
+}
+
+async function loadTCAS() {
+  const text = await fetch("tcas12.xml").then(r=>r.text());
+  const xml = new DOMParser().parseFromString(text,"text/xml");
+  tcasData = Array.from(xml.querySelectorAll("row")).map(r=>({
+    uni: txt(r,"มหาวิทยาลัย"), faculty: txt(r,"คณะ"), minGPA: parseFloat(txt(r,"เกรดขั้นต่ำ"))
+  }));
+  initUni();
+}
+
+function txt(parent, tag) {
+  const el = parent.querySelector(tag);
+  return el ? el.textContent.trim() : "";
+}
+
+function initPlan() {
+  const plans = [...new Set(allCourses.map(c=>c.plan))].sort();
+  dom.plan.innerHTML = `<option value="" disabled selected>— เลือกแผนการเรียน —</option>` +
+    plans.map(p=>`<option>${p}</option>`).join("");
+  dom.plan.addEventListener("change", onPlanChanged);
+}
+
+function initUni() {
+  const unis = [...new Set(tcasData.map(d=>d.uni))].sort();
+  dom.uni.innerHTML = `<option value="" disabled selected>— เลือกมหาวิทยาลัย —</option>` +
+    unis.map(u=>`<option>${u}</option>`).join("");
+  dom.uni.disabled = false;
+  dom.uni.addEventListener("change", onUniChanged);
+}
+
+function onPlanChanged() {
+  const plan = dom.plan.value;
+  const levels = [...new Set(allCourses.filter(c=>c.plan===plan).map(c=>c.level))]
+    .sort((a,b)=>LEVEL_TERM_ORDER.findIndex(l=>l.level===a)-LEVEL_TERM_ORDER.findIndex(l=>l.level===b));
+  dom.level.innerHTML = `<option value="" disabled selected>— เลือกระดับ —</option>` +
+    levels.map(l=>`<option>${l}</option>`).join("");
+  dom.level.disabled = false;
+  dom.level.addEventListener("change", onLevelChanged);
+}
+
+function onLevelChanged() {
+  dom.numTerms.max = 6;
+  dom.numTerms.value = 1;
+  dom.numTerms.disabled = false;
+  updateTermPreview();
+  dom.btnLoad.disabled = false;
+
+  dom.gpaxM4Row.classList.add("hidden");
+  dom.gpaxM5Row.classList.add("hidden");
+  if (dom.level.value === "มัธยมศึกษาปีที่5") {
+    dom.gpaxM4Row.classList.remove("hidden");
+  } else if (dom.level.value === "มัธยมศึกษาปีที่6") {
+    dom.gpaxM4Row.classList.remove("hidden");
+    dom.gpaxM5Row.classList.remove("hidden");
+  }
+}
+
+function onNumTermsChanged() {
+  let n = Math.max(1, Math.min(6, parseInt(dom.numTerms.value||"1")));
+  dom.numTerms.value = n;
+  updateTermPreview();
+}
+
+function updateTermPreview() {
+  const startLevel = dom.level.value;
+  const num = parseInt(dom.numTerms.value||"1");
+  const startIndex = LEVEL_TERM_ORDER.findIndex(l=>l.level===startLevel);
+  if (startIndex<0) { dom.termChips.textContent="ยังไม่เลือก"; return; }
+  const selected = LEVEL_TERM_ORDER.slice(startIndex, startIndex+num);
+  dom.termChips.innerHTML = selected.map(s=>`${s.level} ${s.term}`).join(", ");
+}
+
+function onUniChanged() {
+  const selectedUni = dom.uni.value;
+  const faculties = [...new Set(tcasData.filter(d=>d.uni===selectedUni).map(d=>d.faculty))].sort();
+  dom.faculty.innerHTML = `<option value="" disabled selected>— เลือกคณะ —</option>` +
+    faculties.map(f=>`<option>${f}</option>`).join("");
+  dom.faculty.disabled = false;
+}
+
+function onShowCourses() {
+  const plan = dom.plan.value, startLevel = dom.level.value, num = parseInt(dom.numTerms.value||"1");
+  const startIndex = LEVEL_TERM_ORDER.findIndex(l=>l.level===startLevel);
+  const selected = LEVEL_TERM_ORDER.slice(startIndex, startIndex+num);
+  const rows = allCourses.filter(c=>c.plan===plan && selected.some(s=>s.level===c.level && s.term===c.term));
+  dom.courseList.innerHTML = rows.map(renderCourseRow).join("");
+  dom.coursesCard.classList.remove("hidden");
+  dom.resultCard.classList.add("hidden");
+  dom.creditInfo.textContent = `รวมหน่วยกิต: ${rows.reduce((s,r)=>s+r.credit,0)}`;
+}
+
+function renderCourseRow(r) {
+  const gradeSelect = `
+    <select data-credit="${r.credit}" class="grade">
+      <option value="">— เกรด —</option>
+      <option value="4">4.0</option>
+      <option value="3.5">3.5</option>
+      <option value="3">3</option>
+      <option value="2.5">2.5</option>
+      <option value="2">2</option>
+      <option value="1.5">1.5</option>
+      <option value="1">1.0</option>
+      <option value="0">0</option>
+    </select>`;
+  return `<div class="row">
+    <label style="flex:1"><b>${r.name}</b><br><span class="muted">${r.level} ${r.term} • ${r.credit} หน่วยกิต</span></label>
+    <div>${gradeSelect}</div>
+  </div>`;
+}
+
+function calcGPAX() {
+  const gradeEls = $$(".grade");
+  let sumWX=0, sumW=0;
+  gradeEls.forEach(el=>{
+    const g=parseFloat(el.value), w=parseFloat(el.dataset.credit);
+    if(!isNaN(g)) { sumWX+=g*w; sumW+=w; }
+  });
+
+  // รวม GPAX เดิม
+  if(dom.level.value==="มัธยมศึกษาปีที่5") {
+    const g4=parseFloat(dom.gpaxM4.value), c4=parseFloat(dom.creditM4.value);
+    if(!isNaN(g4) && !isNaN(c4)) { sumWX+=g4*c4; sumW+=c4; }
+  } else if(dom.level.value==="มัธยมศึกษาปีที่6") {
+    const g4=parseFloat(dom.gpaxM4.value), c4=parseFloat(dom.creditM4.value);
+    const g5=parseFloat(dom.gpaxM5.value), c5=parseFloat(dom.creditM5.value);
+    if(!isNaN(g4) && !isNaN(c4)) { sumWX+=g4*c4; sumW+=c4; }
+    if(!isNaN(g5) && !isNaN(c5)) { sumWX+=g5*c5; sumW+=c5; }
+  }
+
+  if(sumW===0){ alert("กรุณากรอกเกรดหรือ GPAX เดิม"); return; }
+
+  const gpax=sumWX/sumW;
+  showResult(gpax);
+}
+
+function showResult(gpax) {
+  dom.gpaxValue.textContent = gpax.toFixed(2);
+  dom.gpaxText.textContent = gpax.toFixed(2);
+  dom.barYour.style.width = `${(gpax/4)*100}%`;
+
+  const uni=dom.uni.value, fac=dom.faculty.value;
+  const data=tcasData.find(d=>d.uni===uni && d.faculty===fac);
+  let msg="";
+  if(data){
+    const min=data.minGPA;
+    if(gpax>=min){
+      msg=`✅ คุณถึงเกณฑ์ขั้นต่ำ ${min.toFixed(2)} ของคณะนี้`;
+    }else{
+      const diff=(min-gpax).toFixed(2);
+      const remCredits = totalCredits()-completedCredits();
+      let need="—";
+      if(remCredits>0){
+        need = (((min*totalCredits())-(gpax*completedCredits()))/remCredits).toFixed(2);
+      }
+      msg=`❌ ขาดอีก ${diff} GPA เพื่อถึง ${min.toFixed(2)}<br>
+           ต้องทำเกรดเฉลี่ยวิชาที่เหลือประมาณ ${need}`;
+    }
+  }
+  dom.resultMsg.innerHTML = msg;
+  dom.resultCard.classList.remove("hidden");
+}
+
+function totalCredits(){ return $$(".grade").reduce((s,e)=>s+parseFloat(e.dataset.credit),0); }
+function completedCredits(){ return $$(".grade").reduce((s,e)=>{const g=parseFloat(e.value);return isNaN(g)?s:s+parseFloat(e.dataset.credit);},0); }
+function clearGrades(){ $$(".grade").forEach(e=>e.value=""); dom.resultCard.classList.add("hidden"); }
+function resetAll(){
+  dom.plan.value=""; dom.level.disabled=true; dom.numTerms.disabled=true; dom.btnLoad.disabled=true;
+  dom.termChips.textContent="ยังไม่เลือก"; dom.uni.value=""; dom.faculty.value=""; dom.faculty.disabled=true;
+  dom.coursesCard.classList.add("hidden"); dom.resultCard.classList.add("hidden");
+  dom.gpaxM4Row.classList.add("hidden"); dom.gpaxM5Row.classList.add("hidden");
+}
+
+dom.numTerms.addEventListener("input", onNumTermsChanged);
+dom.btnLoad.addEventListener("click", onShowCourses);
+dom.btnReset.addEventListener("click", resetAll);
+dom.btnCalc.addEventListener("click", calcGPAX);
+dom.btnClearGrades.addEventListener("click", clearGrades);
+
+Promise.all([loadXML(), loadTCAS()]).catch(e=>alert("โหลดข้อมูลไม่สำเร็จ"));
+
+</script>
+</body>
+</html>

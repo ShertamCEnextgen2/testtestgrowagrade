@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>คำนวณ TCAS68 รอบ 3</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>คำนวณ TCAS68 รอบ 3 (ข้อมูลคณะ มหาวิทยาลัย ยอดนิยมของชาวราชินี)</h1>
+    </header>
+
+    <section class="controls card">
+      <div class="row">
+        <label>มหาวิทยาลัย</label>
+        <select id="university"></select>
+      </div>
+      <div class="row">
+        <label>คณะ / หลักสูตร</label>
+        <select id="faculty"></select>
+      </div>
+      <div id="weightsInfo" class="weights-info"></div>
+    </section>
+
+    <section id="scoresCard" class="card hidden">
+      <h2>กรอกคะแนนของคุณ</h2>
+      <form id="scoreForm">
+        <div id="inputsArea" class="inputs-area"></div>
+
+        <div class="row">
+          <label>GPAX (0-4 หรือ 0-100 — กรอกตามที่ต้องการ)</label>
+          <input id="gpaxInput" type="number" step="0.01" min="0" max="100" />
+        </div>
+
+        <div class="actions">
+          <button type="button" id="calculateBtn" class="btn">คำนวณคะแนน</button>
+          <button type="button" id="resetBtn" class="btn ghost">รีเซ็ต</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="resultCard" class="card hidden">
+      <h2>ผลลัพธ์</h2>
+      <div class="result-row">
+        <div>
+          <p class="muted">คะแนนรวมคาดการณ์</p>
+          <p id="predictedScore" class="big">—</p>
+        </div>
+        <div>
+          <p class="muted">ปี 68 — สูงสุด / ต่ำสุด</p>
+          <p id="minMax" class="mini">—</p>
+        </div>
+      </div>
+
+      <div class="bar-compare">
+        <div class="bar" id="barMax"></div>
+        <div class="bar" id="barYour"></div>
+        <div class="bar" id="barMin"></div>
+      </div>
+
+      <p id="advice" class="muted"></p>
+    </section>
+
+    <footer class="footer muted">
+    </footer>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
